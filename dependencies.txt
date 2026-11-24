@@ -1,0 +1,42 @@
+__repos__
+https://repo.papermc.io/repository/maven-public/
+https://repo.maven.apache.org/maven2/
+__end__
+__deps__
+com.fasterxml.jackson.core:jackson-annotations:2.21@jar 53ca085f4a150f703f49e1aabd935bd03b43e1ea3d55d135438292af22cef56b
+com.github.ben-manes.caffeine:caffeine:3.2.4@jar 9d9d2cfd681fd9272ded3d27c9930db12f89f732345975aa113ebc223bbf1224
+com.google.errorprone:error_prone_annotations:2.49.0@jar 3b1003e51b8ae56fdbd7c71073e81d1683b97e6c4dff5a9151164d59b769d13c
+com.google.protobuf:protobuf-java:4.31.1@jar d60dfe7c68a0d38a248cca96924f289dc7e1966a887ee7cae397701af08575ae
+com.h2database:h2:2.4.240@jar 29b70e427cc1c40cdc376283adbb0cc62853073797bb5fe5761f81fe73d57ce0
+com.mysql:mysql-connector-j:9.7.0@jar 0353648eaa1c91e0f4020c959abf756bc866ffd583df22ae6b6f6e0cbd43eb44
+com.zaxxer:HikariCP:7.1.0@jar 2be45c641b841e81df87292e181f2c203500c5f0e9a1676f135927387f3cf40b
+commons-codec:commons-codec:1.19.0@jar 5c3881e4f556855e9c532927ee0c9dfde94cc66760d5805c031a59887070af5f
+commons-io:commons-io:2.20.0@jar df90bba0fe3cb586b7f164e78fe8f8f4da3f2dd5c27fa645f888100ccc25dd72
+io.leangen.geantyref:geantyref:2.0.1@jar 386b535c079be7d65ddbe0ad9c00955155b7862225aa92b4c6553ab2b1ea95f9
+org.apache.commons:commons-compress:1.28.0@jar e1522945218456f3649a39bc4afd70ce4bd466221519dba7d378f2141a4642ca
+org.apache.commons:commons-lang3:3.18.0@jar 4eeeae8d20c078abb64b015ec158add383ac581571cddc45c68f0c9ae0230720
+org.bytedeco:cpu_features:0.7.0-1.5.8:linux-x86_64@jar dde83575ec0278ab21a89e56bc70f8073ffbff0328f3f4cb11adab862fc37d20
+org.bytedeco:cpu_features:0.7.0-1.5.8:macosx-x86_64@jar 280d2e9066a34ce562def52981ea95fd5ca81a94b6bca1f0f9f64cd161dc9d00
+org.bytedeco:cpu_features:0.7.0-1.5.8:windows-x86_64@jar 494cf1af6ba2bc04370019f8b299760d41fd27fc4e6e4829b645fa17a7b69d2a
+org.bytedeco:cpu_features:0.7.0-1.5.8@jar f4b07236bd29bab28ba4d5b04689d1606c095965d351e4b670a4918fc467b190
+org.bytedeco:javacpp:1.5.8:linux-x86_64@jar 36b78057cdcc5fa0dc950e29271a58c0a6efc5573bd9bd2845b99cccbb3116a7
+org.bytedeco:javacpp:1.5.8:macosx-arm64@jar c605748036b7158edca0128c3febce6bae7c4b297406563ebae2a0dcbc591261
+org.bytedeco:javacpp:1.5.8:macosx-x86_64@jar 6c4f0bf404787c5a374c573b2445d5d6d8ce620f7c9ef41b2c601d1fe3836d6a
+org.bytedeco:javacpp:1.5.8:windows-x86_64@jar 1bb08194d76780cd885fbfd27ed24dfb1ca088ee0b7a8aea25a836cb1506eedc
+org.bytedeco:javacpp:1.5.8@jar 27d5eaf8f4433f6404aae0ad34cdbbfac75174e244c11d38222e0d075af33863
+org.flywaydb:flyway-core:12.9.0@jar e597cec7f68dc2950fb7e88dfae2b2aa156193209791e6b60bf619df74a123d8
+org.flywaydb:flyway-mysql:12.9.0@jar 9752ed3f1f20c5b3ae0c8c7889317a728fa9710c2b823adbfe9f5dd80278f565
+org.jdbi:jdbi3-core:3.53.0@jar df512225aaccd0c15a9ace972e9f98c514daac66efeb00843dbcad299c98c186
+org.jspecify:jspecify:1.0.0@jar 1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab
+org.mariadb.jdbc:mariadb-java-client:3.5.9@jar 11e3bb5bbf8ef0e806ae4d6c5d5033fedf7262cc777f0190bde8a2f3c8e6bd8d
+tools.jackson.core:jackson-core:3.1.1@jar 4cd270bee1a1aa34be18da78268f3879355b6ea09154beff496831785b6194c9
+tools.jackson.core:jackson-databind:3.1.1@jar a80302c80cb02803e33d7b3301a0d619146d3191d285e6bbd39fa17d3aa5f24a
+__end__
+__relocation__
+dep me.lucko:jar-relocator:1.7@jar 6f7d1184e17a90788797e3b9b2e34b87ff9e02bd623851052d78709071c3bb82
+dep org.ow2.asm:asm-commons:9.8@jar 3301a1c1cb4c59fcc5292648dac1d7c5aed4c0f067dfbe88873b8cdfe77404f4
+dep org.ow2.asm:asm-tree:9.8@jar 14b7880cb7c85eed101e2710432fc3ffb83275532a6a894dc4c4095d49ad59f1
+dep org.ow2.asm:asm:9.8@jar 876eab6a83daecad5ca67eb9fcabb063c97b5aeb8cf1fca7a989ecde17522051
+io.leangen.geantyref xyz.jpenilla.chesscraft.dependency.io.leangen.geantyref
+org.apache.commons xyz.jpenilla.chesscraft.dependency.org.apache.commons
+__end__
