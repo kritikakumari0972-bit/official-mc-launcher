@@ -1,0 +1,57 @@
+import { expect, test } from 'bun:test'
+import { PROMO_ORDER, TELEGRAM_CHAT, TELEGRAM_CHAT_EN, promoAt, promoSlides, promoStart, telegramChat } from './promo'
+
+const RU = { partners: true, ruContent: true }
+
+test('slides keep the owner order and drop packs missing from the catalogue', () => {
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: true, ...RU })).toEqual(PROMO_ORDER)
+  expect(promoSlides({ arcania: false, prisonrpg: true, invite: false, ...RU })).toEqual(['discord', 'telegram', 'anarchy', 'prisonrpg', 'smp'])
+  expect(promoSlides({ arcania: false, prisonrpg: false, invite: false, ...RU })).toEqual(['discord', 'telegram', 'anarchy', 'smp'])
+})
+
+test('the invite slide shows only once the referral terms came from the server', () => {
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: false, ...RU }), 'without live terms the slide would promise days nobody confirmed').not.toContain('invite')
+  expect(promoSlides({ arcania: false, prisonrpg: false, invite: true, ...RU }).slice(-1)[0], 'the friend offer closes the carousel after the owner-ordered slides').toBe('invite')
+})
+
+test('outside the Russian market partner servers drop out and Telegram leads to the English channel', () => {
+  const intl = promoSlides({ arcania: true, prisonrpg: true, invite: true, partners: false, ruContent: false })
+  expect(intl, 'MCRU anarchy and MetaLabs prison are Russian partner servers, an English player has nowhere to talk to them').not.toContain('anarchy')
+  expect(intl, 'the prison slide is a partner server even when its pack is in the catalogue').not.toContain('prisonrpg')
+  expect(intl, 'Millida own slides stay on every market').toEqual(['discord', 'telegram', 'arcania', 'smp', 'invite'])
+  expect(telegramChat(false), 'an English player is sent to the English channel, not the Russian one').toBe(TELEGRAM_CHAT_EN)
+  expect(telegramChat(true), 'the Russian market keeps the channel the shop reward checks').toBe(TELEGRAM_CHAT)
+})
+
+test('rotation walks every slide and wraps', () => {
+  const s = promoSlides({ arcania: true, prisonrpg: false, invite: true, ...RU })
+  const seen = Array.from({ length: s.length * 2 }, (_, i) => promoAt(s, 3, i))
+  expect(new Set(seen).size).toBe(s.length)
+  expect(promoAt(s, 3, s.length)).toBe(promoAt(s, 3, 0))
+  expect(promoAt([], 0, 5)).toBeNull()
+  expect(promoAt(s, 0, Number.NaN)).toBe(s[0]!)
+})
+
+test('start is spread by day and player, never out of range', () => {
+  for (let day = 0; day < 20; day++) for (const salt of [0, 1, 7, 123456789]) {
+    const i = promoStart(5, day, salt)
+    expect(i).toBeGreaterThanOrEqual(0)
+    expect(i).toBeLessThan(5)
+  }
+  expect(promoStart(5, 1, 0)).not.toBe(promoStart(5, 2, 0))
+  expect(promoStart(0, 1, 1)).toBe(0)
+})
+
+test('a fresh partner release opens the carousel only where partner packs are sold', () => {
+  const RU = { partners: true, ruContent: true }
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: false, abonent: true, ...RU })[0], 'the released pack must be the first slide players see').toBe('abonent')
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: false, abonent: true, partners: false, ruContent: false }), 'abroad the partner pack is not on sale').not.toContain('abonent')
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: false, abonent: false, ...RU }), 'no pack in the list, no slide').not.toContain('abonent')
+})
+
+test('a running cosmetics collection opens the carousel on every market', () => {
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: true, collection: true, ...RU })[0], 'the timed collection is the freshest news, it leads').toBe('collection')
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: true, collection: true, abonent: true, ...RU }).slice(0, 2), 'a partner release follows the collection').toEqual(['collection', 'abonent'])
+  expect(promoSlides({ arcania: false, prisonrpg: false, invite: false, collection: true, partners: false, ruContent: false })[0], 'cosmetics are Millida own, not a partner offer').toBe('collection')
+  expect(promoSlides({ arcania: true, prisonrpg: true, invite: true, ...RU }), 'without a running collection the slide does not appear').not.toContain('collection')
+})
