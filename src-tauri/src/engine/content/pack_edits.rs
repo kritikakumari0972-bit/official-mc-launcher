@@ -1,0 +1,306 @@
+// Finds out if the player changed mods by hand in a catalog modpack, so auto-update does not wipe those changes. Reads the file list in mods/, deletes nothing, no network.
+use crate::engine::*;
+use std::collections::BTreeSet;
+use std::path::Path;
+use std::time::{Duration, SystemTime};
+
+/// The player's own answer to «update this build by itself». Absent means the
+/// launcher decides: an untouched build follows the catalogue, a changed one
+/// is left alone, since an update brings the author's mods folder whole.
+pub const PACK_AUTO_UPDATE_KEY: &str = "catalogPackAutoUpdate";
+const SHIPPED_MODS_FILE: &str = "millida-pack-mods.json";
+const MOD_EXTENSIONS: [&str; 3] = ["jar", "zip", "litemod"];
+const CLOCK_SLACK: Duration = Duration::from_secs(2);
+
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PackAutoUpdate {
+    pub catalog: bool,
+    pub on: bool,
+    pub modified: bool,
+    pub chosen: Option<bool>,
+    /// The author lets the build start only on the published version: the
+    /// update always runs, whatever the player chose or changed.
+    pub forced: bool,
+    /// Files shipped by the current version which are no longer in the build.
+    pub removed_mods: Vec<String>,
+    /// Player-added files in mods/ that the next catalogue version will drop.
+    pub added_mods: Vec<String>,
+}
+
+fn mod_file(name: &str) -> bool {
+    let low = name.to_ascii_lowercase();
+    low.rsplit_once('.').is_some_and(|(_, ext)| MOD_EXTENSIONS.contains(&ext))
+}
+
+/// Jars the launcher itself puts into every build at launch: their coming and
+/// going is not the player's edit, and a shared build does not carry them.
+pub(crate) fn launcher_placed(name: &str) -> bool {
+    is_millida_mod_file(&name.to_ascii_lowercase()) || is_skin_mod_file(name)
+}
+
+/// Enabled mod files of a build, `mods/` and one level below it (1.7.10 packs
+/// keep `mods/1.7.10`). A disabled jar ends in `.disabled` and is not a mod
+/// file, so switching a shipped mod off reads as it being gone.
+fn enabled_mods(pdir: &Path) -> Vec<(String, std::fs::Metadata)> {
+    let mut out = vec![];
+    collect_mods(&pdir.join(content_dir("mod")), "", 0, false, &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn collect_mods(dir: &Path, prefix: &str, depth: u32, include_disabled: bool, out: &mut Vec<(String, std::fs::Metadata)>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for entry in rd.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else { continue };
+        let file = if include_disabled { name.strip_suffix(".disabled").unwrap_or(&name) } else { &name };
+        let rel = format!("{}{}", prefix, file);
+        if meta.is_dir() && depth == 0 {
+            collect_mods(&entry.path(), &format!("{}/", rel), depth + 1, include_disabled, out);
+        } else if meta.is_file() && mod_file(file) && !launcher_placed(file) {
+            out.push((rel, meta));
+        }
+    }
+}
+
+fn names(mods: &[(String, std::fs::Metadata)]) -> BTreeSet<String> {
+    mods.iter().map(|(n, _)| n.clone()).collect()
+}
+
+/// What the pack put into `mods/`, written right after it was placed, before
+/// the launcher or the player touched anything.
+pub(crate) fn record_shipped_mods(pdir: &Path) -> Result<(), String> {
+    let shipped: Vec<String> = names(&enabled_mods(pdir)).into_iter().collect();
+    write_json_atomic(&pdir.join(SHIPPED_MODS_FILE), &shipped).map_err(|e| format!("Не удалось записать список модов сборки: {}", e))
+}
+
+fn read_shipped_mods(pdir: &Path) -> Option<BTreeSet<String>> {
+    let raw = std::fs::read(pdir.join(SHIPPED_MODS_FILE)).ok()?;
+    serde_json::from_slice::<Vec<String>>(&raw).ok().map(|v| v.into_iter().collect())
+}
+
+/// A disabled jar is still present; it will be switched back on by an update,
+/// but it is not a deleted file requiring another download.
+fn removed_shipped_mods(pdir: &Path) -> Option<Vec<String>> {
+    Some(read_shipped_mods(pdir)?.into_iter().filter(|name| {
+        let path = pdir.join(content_dir("mod")).join(name);
+        let disabled = pdir.join(content_dir("mod")).join(format!("{}.disabled", name));
+        !path.is_file() && !disabled.is_file()
+    }).collect())
+}
+
+fn added_mods(pdir: &Path) -> Option<Vec<String>> {
+    let shipped = read_shipped_mods(pdir)?;
+    let mut all = vec![];
+    collect_mods(&pdir.join(content_dir("mod")), "", 0, true, &mut all);
+    Some(names(&all).difference(&shipped).cloned().collect())
+}
+
+fn arrived_at(meta: &std::fs::Metadata) -> Option<SystemTime> {
+    meta.created().or_else(|_| meta.modified()).ok()
+}
+
+/// Builds installed before the list of shipped mods existed only have the time
+/// the pack was placed: a mod file that arrived later was added. Without even
+/// that there is nothing to compare with, and a build that may hold the
+/// player's mods is not the one to overwrite.
+fn added_since_install(recorded: Option<SystemTime>, mods: &[(String, std::fs::Metadata)]) -> bool {
+    let Some(recorded) = recorded else { return true };
+    let limit = recorded + CLOCK_SLACK;
+    mods.iter().any(|(_, meta)| arrived_at(meta).is_some_and(|t| t > limit))
+}
+
+pub(crate) fn mods_modified(pdir: &Path) -> bool {
+    let mods = enabled_mods(pdir);
+    match read_shipped_mods(pdir) {
+        Some(shipped) => shipped != names(&mods),
+        None => added_since_install(shipped_recorded_at(pdir), &mods),
+    }
+}
+
+pub fn auto_update_on(chosen: Option<bool>, modified: bool, forced: bool) -> bool {
+    forced || chosen.unwrap_or(!modified)
+}
+
+fn catalog_build(settings: &serde_json::Value) -> bool {
+    settings["catalogPackSlug"].as_str().map(str::trim).is_some_and(catalog_slug_ok)
+}
+
+/// A reviewer's candidate install is meant to differ from the published version.
+fn update_forced(settings: &serde_json::Value) -> bool {
+    let review = settings["catalogPackReviewFile"].as_str().is_some_and(|f| !f.trim().is_empty());
+    catalog_build(settings) && !review && settings[PACK_ALWAYS_UPDATE_KEY].as_bool() == Some(true)
+}
+
+pub const FORCED_UPDATE_REFUSAL: &str = "Автор разрешает играть только на последней версии";
+
+pub fn pack_auto_update(profile: &str) -> PackAutoUpdate {
+    let settings = profile_settings(profile);
+    if !catalog_build(&settings) {
+        return PackAutoUpdate { catalog: false, on: false, modified: false, chosen: None, forced: false, removed_mods: vec![], added_mods: vec![] };
+    }
+    let chosen = settings[PACK_AUTO_UPDATE_KEY].as_bool();
+    let forced = update_forced(&settings);
+    // A pinned file is the player's choice too: a pack update replaces the whole mods folder.
+    let modified = mods_modified(&profile_dir(profile)) || has_locked_content(profile);
+    let removed_mods = removed_shipped_mods(&profile_dir(profile)).unwrap_or_else(|| {
+        // Older installs have no shipped-file snapshot. The explicit removal
+        // record still lets us warn before replacing their mods folder.
+        let removed = removed_mod_ids(profile);
+        if removed.is_empty() { return vec![]; }
+        let mods_dir = profile_dir(profile).join(content_dir("mod"));
+        let present: BTreeSet<String> = local_meta_map(profile, "mod").into_values()
+            .filter(|m| mods_dir.join(&m.file_name).is_file() || mods_dir.join(format!("{}.disabled", m.file_name)).is_file())
+            .flat_map(|m| std::iter::once(m.mod_id).chain(m.provides))
+            .map(|id| id.to_ascii_lowercase()).collect();
+        removed.difference(&present).cloned().collect()
+    });
+    let added_mods = added_mods(&profile_dir(profile)).unwrap_or_default();
+    PackAutoUpdate { catalog: true, on: auto_update_on(chosen, modified, forced), modified, chosen, forced, removed_mods, added_mods }
+}
+
+pub fn set_pack_auto_update(profile: &str, on: bool) -> Result<PackAutoUpdate, String> {
+    if !load_profiles().iter().any(|p| p.name == profile) {
+        return Err("Сборка не найдена — открой список сборок заново".into());
+    }
+    let settings = profile_settings(profile);
+    if !catalog_build(&settings) {
+        return Err("Эта сборка поставлена не из каталога Millida — обновлять её неоткуда".into());
+    }
+    if !on && update_forced(&settings) {
+        return Err(FORCED_UPDATE_REFUSAL.into());
+    }
+    let mut patch = serde_json::Map::new();
+    patch.insert(PACK_AUTO_UPDATE_KEY.into(), serde_json::Value::Bool(on));
+    merge_settings(profile, patch);
+    let state = pack_auto_update(profile);
+    if state.chosen != Some(on) {
+        return Err("Не удалось сохранить настройку — проверь, что папка сборки доступна для записи".into());
+    }
+    Ok(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("millida-pack-edits-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(p.join("mods/1.7.10")).unwrap();
+        p
+    }
+
+    fn put(dir: &Path, rel: &str) {
+        let path = dir.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"x").unwrap();
+    }
+
+    fn shipped_pack(name: &str) -> std::path::PathBuf {
+        let dir = scratch(name);
+        for rel in ["mods/angelica.jar", "mods/unimixins.jar", "mods/1.7.10/legacy.zip"] {
+            put(&dir, rel);
+        }
+        record_shipped_mods(&dir).unwrap();
+        dir
+    }
+
+    /// (what happened to the installed pack) -> does it still count as the author's build.
+    #[test]
+    fn a_player_edit_of_the_mods_folder_is_seen() {
+        type Edit = fn(&Path);
+        let cases: [(&str, Edit, bool, &str); 9] = [
+            ("untouched", |_| {}, false, "a build as shipped keeps following the catalogue"),
+            ("added", |d| put(d, "mods/jei.jar"), true, "29.09: a mod the player added was wiped by the next update"),
+            ("removed", |d| std::fs::remove_file(d.join("mods/angelica.jar")).unwrap(), true, "a removed mod would come back with the update"),
+            (
+                "disabled",
+                |d| std::fs::rename(d.join("mods/angelica.jar"), d.join("mods/angelica.jar.disabled")).unwrap(),
+                true,
+                "a switched-off mod would be switched back on",
+            ),
+            ("nested", |d| put(d, "mods/1.7.10/extra.jar"), true, "1.7.10 packs keep mods one folder down"),
+            ("own-mod", |d| put(d, "mods/millida-mod-forge-1.7.10-0.1.15.jar"), false, "our mod goes into every build at launch, it is not the player's edit"),
+            ("skin-mod", |d| put(d, "mods/CustomSkinLoader.jar"), false, "the skin mod is placed by the launcher too"),
+            ("runtime", |d| put(d, "mods/.connector/cache.jar"), false, "a mod's own cache folder is not a mod"),
+            ("config", |d| put(d, "mods/notes.txt"), false, "only mod files count"),
+        ];
+        for (name, edit, want, why) in cases {
+            let dir = shipped_pack(name);
+            edit(&dir);
+            assert_eq!(mods_modified(&dir), want, "{}: {}", name, why);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn a_manual_update_warns_only_for_shipped_mods_that_are_gone() {
+        let dir = shipped_pack("removed-prompt");
+        assert_eq!(removed_shipped_mods(&dir), Some(vec![]));
+        std::fs::rename(dir.join("mods/unimixins.jar"), dir.join("mods/unimixins.jar.disabled")).unwrap();
+        put(&dir, "mods/own.jar");
+        assert_eq!(removed_shipped_mods(&dir), Some(vec![]), "disabled and player-added files are not deleted shipped mods");
+        assert_eq!(added_mods(&dir), Some(vec!["own.jar".into()]));
+        std::fs::rename(dir.join("mods/own.jar"), dir.join("mods/own.jar.disabled")).unwrap();
+        assert_eq!(added_mods(&dir), Some(vec!["own.jar".into()]), "a disabled player-added mod is also lost on update");
+        std::fs::remove_file(dir.join("mods/angelica.jar")).unwrap();
+        assert_eq!(removed_shipped_mods(&dir), Some(vec!["angelica.jar".into()]));
+        put(&dir, "mods/angelica.jar");
+        assert_eq!(removed_shipped_mods(&dir), Some(vec![]), "re-adding the file clears the warning");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_build_installed_before_the_list_is_judged_by_its_install_time() {
+        let dir = scratch("legacy");
+        put(&dir, "mods/angelica.jar");
+        let mods = enabled_mods(&dir);
+        let now = SystemTime::now();
+        assert!(!added_since_install(Some(now + Duration::from_secs(60)), &mods), "mods placed with the pack are the author's");
+        assert!(added_since_install(Some(now - Duration::from_secs(60)), &mods), "a mod that arrived after the install is the player's");
+        assert!(added_since_install(None, &mods), "with no record at all the build may hold the player's mods and is not overwritten");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// (player's choice, build edited, author forces the latest) -> the build updates by itself.
+    #[test]
+    fn the_players_choice_wins_over_the_default() {
+        let cases: [(Option<bool>, bool, bool, bool, &str); 7] = [
+            (None, false, false, true, "an untouched catalogue build follows the published version"),
+            (None, true, false, false, "an edited build is never overwritten behind the player's back"),
+            (Some(true), true, false, true, "the player asked for updates knowing the mods folder is replaced"),
+            (Some(false), false, false, false, "the player turned updates off for an untouched build"),
+            (Some(false), false, true, true, "a switch turned off before the author forced updates does not keep the old version"),
+            (None, true, true, true, "added mods do not keep a forced build on the old version"),
+            (Some(false), true, true, true, "nothing the player did keeps a forced build on the old version"),
+        ];
+        for (chosen, modified, forced, want, why) in cases {
+            assert_eq!(auto_update_on(chosen, modified, forced), want, "{}", why);
+        }
+    }
+
+    /// (build settings) -> does the author's «latest only» apply.
+    #[test]
+    fn only_a_published_catalogue_install_is_forced() {
+        let cases: [(serde_json::Value, bool, &str); 6] = [
+            (serde_json::json!({ "catalogPackSlug": "arcania", PACK_ALWAYS_UPDATE_KEY: true }), true, "the card asked for the latest version only"),
+            (serde_json::json!({ "catalogPackSlug": "arcania", PACK_ALWAYS_UPDATE_KEY: false }), false, "a withdrawn opt-in gives the switch back"),
+            (serde_json::json!({ "catalogPackSlug": "arcania" }), false, "a card without the field forces nothing"),
+            (serde_json::json!({ "catalogPackSlug": "arcania", PACK_ALWAYS_UPDATE_KEY: "true" }), false, "only a real boolean counts"),
+            (serde_json::json!({ PACK_ALWAYS_UPDATE_KEY: true }), false, "the flag outside a catalogue build means nothing"),
+            (
+                serde_json::json!({ "catalogPackSlug": "arcania", "catalogPackReviewFile": "f1", PACK_ALWAYS_UPDATE_KEY: true }),
+                false,
+                "a reviewer's candidate is not replaced by the published version",
+            ),
+        ];
+        for (settings, want, why) in cases {
+            assert_eq!(update_forced(&settings), want, "{}", why);
+        }
+    }
+}

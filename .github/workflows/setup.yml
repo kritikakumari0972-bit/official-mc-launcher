@@ -1,0 +1,304 @@
+# Published to millida/launcher as setup.yml. The sync deploy key cannot create
+# or change workflow files, so edits here must be pushed to the public
+# repository once by an account that can.
+#
+# The small installer from millida.net (installer/) is built here, on
+# GitHub-hosted runners, from the tagged commit, like the launcher itself.
+#
+# The Windows exe is signed in this run with the Certum SimplySign cloud
+# certificate from the `signing` environment, which only installer and release
+# tags can enter. A file signed elsewhere can still be attached by hand: the run
+# accepts it only if its Authenticode digest equals the digest of the build made
+# here, because a signature adds a signature and nothing else.
+name: Setup
+
+on:
+  push:
+    tags: ["setup-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Installer release, for example setup-v3"
+        required: true
+        type: string
+      signed_exe_url:
+        description: "https link to MillidaLauncherSetup.exe from the release, signed by the certificate owner"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: setup-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  windows:
+    name: Windows stub
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy
+
+      # The stub never updates on players' machines: these checks are its only gate.
+      - name: Clippy and tests
+        working-directory: installer
+        run: |
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+
+      # /Brepro drops the link timestamp, the path prefix drops this runner's
+      # folder: two builds of one commit come out alike.
+      - name: Build
+        working-directory: installer
+        env:
+          RUSTFLAGS: -C link-arg=/Brepro --remap-path-prefix=${{ github.workspace }}=/build
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Lay out
+        shell: bash
+        run: |
+          mkdir -p out
+          cp installer/target/x86_64-pc-windows-msvc/release/MillidaLauncherSetup.exe out/MillidaLauncherSetup.exe
+          node .github/scripts/pe-digest.mjs out/MillidaLauncherSetup.exe | tee out/authenticode.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-windows
+          path: out/*
+          if-no-files-found: error
+
+  # The signing job checks out only the CI scripts and installs nothing else:
+  # the OTP seed can sign anything as us, so no third-party build code runs here.
+  sign:
+    name: Sign (Certum cloud certificate)
+    if: github.event_name == 'push' && github.repository == 'millida/launcher'
+    needs: windows
+    runs-on: ubuntu-latest
+    environment: signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: setup-windows
+          path: out
+
+      - name: Sign
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: |
+          set -eu
+          mkdir signed
+          cp out/MillidaLauncherSetup.exe signed/MillidaLauncherSetup-signed.exe
+          bash .github/scripts/sign-windows.sh signed/MillidaLauncherSetup-signed.exe
+          a=$(node .github/scripts/pe-digest.mjs out/MillidaLauncherSetup.exe | cut -d' ' -f1)
+          b=$(node .github/scripts/pe-digest.mjs signed/MillidaLauncherSetup-signed.exe | cut -d' ' -f1)
+          [ -n "$a" ] && [ "$a" = "$b" ] || { echo "::error::the signed exe is not the build from this run"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-windows-signed
+          path: signed/MillidaLauncherSetup-signed.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux stub
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Linked against the build machine's glibc: an old one runs on old systems.
+    container: ubuntu:22.04
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates curl git build-essential pkg-config
+
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build
+        working-directory: installer
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build
+        run: |
+          cargo test --locked
+          cargo build --release --locked --target x86_64-unknown-linux-gnu
+
+      - name: Lay out
+        run: |
+          mkdir -p out
+          cp installer/target/x86_64-unknown-linux-gnu/release/MillidaLauncherSetup out/millida-launcher-setup-linux-x86_64
+          cp installer/install.sh out/install.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-linux
+          path: out/*
+          if-no-files-found: error
+
+  linux-arm64:
+    name: Linux arm64 stub
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04-arm
+    container: ubuntu:22.04
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates curl git build-essential pkg-config
+
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Build
+        working-directory: installer
+        env:
+          RUSTFLAGS: --remap-path-prefix=${{ github.workspace }}=/build
+        run: |
+          cargo test --locked
+          cargo build --release --locked --target aarch64-unknown-linux-gnu
+
+      - name: Lay out
+        run: |
+          mkdir -p out
+          cp installer/target/aarch64-unknown-linux-gnu/release/MillidaLauncherSetup out/millida-launcher-setup-linux-aarch64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-linux-arm64
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    if: github.event_name == 'push'
+    needs: [windows, sign, linux, linux-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: setup-*
+          path: assets
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: assets
+        run: |
+          set -eu
+          test -s authenticode.txt || { echo "::error::empty Authenticode digest"; exit 1; }
+          sha256sum $(ls | grep -v authenticode.txt | sort) > SHA256SUMS && cat SHA256SUMS
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            assets/MillidaLauncherSetup*.exe
+            assets/millida-launcher-setup-linux-x86_64
+            assets/millida-launcher-setup-linux-aarch64
+            assets/install.sh
+
+      # Never "Latest": that badge belongs to the launcher releases.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          digest=$(cut -d' ' -f1 assets/authenticode.txt)
+          if [ -f assets/MillidaLauncherSetup-signed.exe ]; then
+            signed="MillidaLauncherSetup-signed.exe is the same file with the Windows signature applied in this run."
+          else
+            signed="A Windows signature may appear later as the file MillidaLauncherSetup-signed.exe: the workflow accepts it only if its digest matches this one."
+          fi
+          cat > notes.md <<EOF
+          The small installer from millida.net: it downloads the launcher from the Releases of this repository and verifies its signature.
+          Built by GitHub Actions from commit ${GITHUB_SHA}.
+
+          Authenticode digest (the same before and after signing): \`${digest}\`
+          ${signed}
+
+          Verify: \`gh attestation verify MillidaLauncherSetup.exe -R ${GITHUB_REPOSITORY}\`.
+          EOF
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --latest=false \
+            --title "Installer ${TAG#setup-v}" --notes-file notes.md
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/*
+
+  attach-signed:
+    name: Attach the signed exe
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch both files
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          SIGNED_URL: ${{ inputs.signed_exe_url }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:TAG -notmatch '^setup-v\d+$') { throw "'$env:TAG' is not an installer release" }
+          if (-not $env:SIGNED_URL.StartsWith('https://')) { throw 'The link to the signed file must use https' }
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern MillidaLauncherSetup.exe --dir out
+          Invoke-WebRequest -Uri $env:SIGNED_URL -OutFile out/MillidaLauncherSetup-signed.exe -MaximumRedirection 5
+
+      # The only thing a signature may add is the signature: equal digests mean
+      # the signed file is this repository's build, byte for byte otherwise.
+      - name: Same build, valid signature
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sig = Get-AuthenticodeSignature out/MillidaLauncherSetup-signed.exe
+          if ($sig.Status -ne 'Valid') { throw "The signature is not valid: $($sig.Status)" }
+          $sig.SignerCertificate | Format-List Subject, Issuer, NotAfter
+          $a = (node .github/scripts/pe-digest.mjs out/MillidaLauncherSetup.exe).Split(' ')[0]
+          $b = (node .github/scripts/pe-digest.mjs out/MillidaLauncherSetup-signed.exe).Split(' ')[0]
+          echo "built here: $a"
+          echo "signed:        $b"
+          if ($a -ne $b) { throw 'The signed file is not the build from the release' }
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: out/MillidaLauncherSetup-signed.exe
+
+      - name: Upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir sums
+          grep -v ' MillidaLauncherSetup-signed.exe$' sums/SHA256SUMS > SHA256SUMS || true
+          (cd out && sha256sum MillidaLauncherSetup-signed.exe) >> SHA256SUMS
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber out/MillidaLauncherSetup-signed.exe SHA256SUMS
