@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { claimWelcome, type FragmentProgress, type ItemRef } from '../lib/rubies'
-import { getAccount, isMillidaKind } from '../state/accounts'
+import { getAccount, isOfficial MC LauncherKind } from '../state/accounts'
 import { useGameNick } from '../state/gameNick'
 import { useUi } from '../state/ui'
 import '../styles/pixel/welcome.css'
@@ -17,7 +17,7 @@ import { useT } from '../i18n'
  * Уходит пиксельным растворением: клетки гаснут волной от центра, на фронте
  * вспыхивают зелёным (как переход Arcania Lab).
  *
- * Первый запуск аккаунта Millida — подарок новичку (26.09.2026): половина
+ * Первый запуск аккаунта Official MC Launcher — подарок новичку (26.09.2026): половина
  * фрагментов нимба, остаток докупается в магазине. Заставка держится дольше и
  * показывает вещь карточкой с полосой фрагментов.
  */
@@ -59,7 +59,7 @@ export function Welcome() {
     setFirst(isFirst)
     setPhase('in')
     const acc = getAccount()
-    if (isFirst && acc && isMillidaKind(acc.kind)) {
+    if (isFirst && acc && isOfficial MC LauncherKind(acc.kind)) {
       void claimWelcome()
         .then((r) => r && r.item && setGift({ item: r.item, fragments: r.fragments ?? null }))
         .catch(() => undefined)
@@ -136,7 +136,7 @@ export function Welcome() {
 
   if (phase === 'off') return null
   const acc = getAccount()
-  const nick = (acc && isMillidaKind(acc.kind) && gameName) || acc?.nick || ''
+  const nick = (acc && isOfficial MC LauncherKind(acc.kind) && gameName) || acc?.nick || ''
 
   return (
     <div className={'welcome is-' + phase} onClick={() => setPhase('out')} role="presentation">
@@ -150,9 +150,9 @@ export function Welcome() {
       ) : null}
       <div className="welcome-body" aria-live="polite">
         {first && phase === 'in' ? <Burst n={30} spread={320} seed={9} /> : null}
-        <img className="welcome-logo" src="/millida-logo.svg" alt="" />
+        <img className="welcome-logo" src="/official-mc-logo.svg" alt="" />
         <span className="welcome-hi">{first ? t('Добро пожаловать') : t('С возвращением,')}</span>
-        <b className="welcome-nick">{first ? t('в Millida') : nick || t('игрок')}</b>
+        <b className="welcome-nick">{first ? t('в Official MC Launcher') : nick || t('игрок')}</b>
         {gift ? (
           <div className="welcome-gift sh-card is-show" {...rarityProps(gift.item.rarity)}>
             <RarityFx />
