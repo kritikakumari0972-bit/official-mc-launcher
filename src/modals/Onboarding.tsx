@@ -15,7 +15,7 @@ import { track } from '../lib/telemetry'
 import { trackImportFailure } from '../lib/importTrack'
 import { MovePanel } from './MoveBuilds'
 import { autostartOn, setAutostart } from '../lib/autostart'
-import { hasMillidaAccount } from '../lib/api'
+import { hasOfficial MC LauncherAccount } from '../lib/api'
 import { apiErrorText } from '../lib/apiError'
 import { Head } from '../components/Head'
 import { dropInviteCode, lookupInviter, onboardingInvite, peekInviteCode } from '../lib/referrals'
@@ -32,7 +32,7 @@ function Welcome({ nick }: { nick: string }) {
   return (
     <>
       <div className="onb-hero">
-        <img src="/millida-logo.svg" alt="" />
+        <img src="/official-mc-logo.svg" alt="" />
         <div>
           <h3>{nick ? t('Привет, {nick}!', { nick }) : t('Привет!')}</h3>
         </div>
@@ -99,7 +99,7 @@ function InviterStep() {
       .then(() => {
         dropInviteCode()
         showToast(t('Друг найден — подарок твой'), 'ok', 'achievement')
-        onboardingNext(!hasMillidaAccount())
+        onboardingNext(!hasOfficial MC LauncherAccount())
       })
       .catch((e) => showToast(apiErrorText(e, t('Не удалось применить')), 'error'))
       .finally(() => setBusy(false))
@@ -244,7 +244,7 @@ function ImportStep() {
   return (
     <>
       <h3>{t('Перенесём сборки')}</h3>
-      <div className="sub">{movable ? t('Сборки Prism и Modrinth App переедут в Millida целиком — с мирами и настройками') : t('Оригиналы останутся на месте')}</div>
+      <div className="sub">{movable ? t('Сборки Prism и Modrinth App переедут в Official MC Launcher целиком — с мирами и настройками') : t('Оригиналы останутся на месте')}</div>
       {movable ? <MovePanel /> : null}
       <div className="onb-scroll">
         {failed ? (
@@ -309,7 +309,7 @@ function ImportStep() {
 const fromTlauncher = (it: FoundInstance) => /TLauncher|TL Legacy/.test(it.source)
 
 /// The TLauncher nick joins the accounts without taking over the one already in
-/// use: a Millida sign-in keeps launching as itself.
+/// use: a Official MC Launcher sign-in keeps launching as itself.
 function keepNick(nick: string) {
   const store = useAccounts.getState()
   if (store.list.some((a) => a.kind === 'offline' && a.nick === nick)) return
@@ -459,7 +459,7 @@ export function OnboardingModal() {
 
         <div className="onb-actions">
           {step > 0 ? (
-            <button className="btn md secondary" onClick={() => onboardingBack(!hasMillidaAccount())}>
+            <button className="btn md secondary" onClick={() => onboardingBack(!hasOfficial MC LauncherAccount())}>
               {t('Назад')}
             </button>
           ) : (
@@ -484,7 +484,7 @@ export function OnboardingModal() {
               data-gfx-done={step === GFX_STEP ? '' : undefined}
               onClick={() => {
                 if (step === GFX_STEP) commitGfx()
-                onboardingNext(!hasMillidaAccount())
+                onboardingNext(!hasOfficial MC LauncherAccount())
               }}
             >
               {step === 0 ? t('Поехали') : step === INVITER_STEP ? t('Пропустить') : t('Далее')}
