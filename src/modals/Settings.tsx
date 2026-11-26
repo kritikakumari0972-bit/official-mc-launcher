@@ -69,14 +69,14 @@ import { LangPicker } from '../components/LangPicker'
 import { readPref, writePref } from '../lib/prefs'
 import { musicAutostartOn, setMusicAutostart } from '../state/music'
 import { setTelemetryEnabled, telemetryEnabled, track, trackFailure } from '../lib/telemetry'
-import { getAccount, getMillidaAccount, useAccounts } from '../state/accounts'
+import { getAccount, getOfficial MC LauncherAccount, useAccounts } from '../state/accounts'
 import { balanceText, openTopup, useMoney } from '../lib/useMoney'
-// Наличие аккаунта берём из стора, а не вызовом hasMillidaAccount(): вызов не
+// Наличие аккаунта берём из стора, а не вызовом hasOfficial MC LauncherAccount(): вызов не
 // реактивен, и вкладка «Приватность», открытая до готовности хранилища сессий
-// (или до входа в аккаунт), навсегда застревала на «Нужен аккаунт Millida».
-import { useHasMillida } from '../state/auth'
+// (или до входа в аккаунт), навсегда застревала на «Нужен аккаунт Official MC Launcher».
+import { useHasOfficial MC Launcher } from '../state/auth'
 import { setSkinSource, setSkinTarget, skinSource, skinTarget, type SkinTarget } from '../lib/gameProfile'
-import { autoTuneGlobal, millidaModEnabled, setAutoTuneGlobal, setMillidaModEnabled } from '../ipc/commands'
+import { autoTuneGlobal, millidaModEnabled, setAutoTuneGlobal, setOfficial MC LauncherModEnabled } from '../ipc/commands'
 import { startTour } from '../state/tour'
 import { buildDiagnostics } from '../lib/diag'
 import { copyText } from '../lib/clipboard'
@@ -301,7 +301,7 @@ export function Settings({ on }: { on: boolean }) {
   useAccounts()
   useMoney()
   const acc = getAccount()
-  const millidaAcc = getMillidaAccount()
+  const millidaAcc = getOfficial MC LauncherAccount()
 
   useEffect(() => {
     if (!on || !hasTauri()) return
@@ -343,11 +343,11 @@ export function Settings({ on }: { on: boolean }) {
   // Приватность серверная и общая с сайтом: при открытии раздела перечитываем
   // её, чтобы увидеть значение, выставленное на millida.net с другого места.
   const privacy = usePrivacy()
-  const hasMillida = useHasMillida()
+  const hasOfficial MC Launcher = useHasOfficial MC Launcher()
   useEffect(() => {
-    if (!on || !hasMillida) return
+    if (!on || !hasOfficial MC Launcher) return
     void loadPrivacy(true)
-  }, [on, hasMillida])
+  }, [on, hasOfficial MC Launcher])
 
   const pickDuoInvites = (value: DuoInvites) => {
     if (value === privacy.settings.duoInvites || privacy.saving === 'duoInvites') return
@@ -827,7 +827,7 @@ export function Settings({ on }: { on: boolean }) {
           <Segs<SkinSource>
             value={skins}
             options={[
-              ['millida', 'Millida'],
+              ['millida', 'Official MC Launcher'],
               ['mojang', t('Лицензия')],
             ]}
             onPick={(v) => {
@@ -842,14 +842,14 @@ export function Settings({ on }: { on: boolean }) {
             }}
           />
         </Row>
-        {hasTauri() && hasMillida && acc?.kind === 'microsoft' ? (
+        {hasTauri() && hasOfficial MC Launcher && acc?.kind === 'microsoft' ? (
           <Row title={t('Куда ставить скин')} keys="скины лицензия millida mojang применить">
             <Segs<SkinTarget>
               value={target}
               options={[
                 ['both', t('Везде')],
                 ['license', t('Лицензия')],
-                ['millida', 'Millida'],
+                ['millida', 'Official MC Launcher'],
               ]}
               onPick={(v) => {
                 setTarget(v)
@@ -858,15 +858,15 @@ export function Settings({ on }: { on: boolean }) {
             />
           </Row>
         ) : null}
-        <Row title={t('Мод Millida')} hint={t('Скины, плащи и эмоции в игре')} keys="мод эмоции плащи">
+        <Row title={t('Мод Official MC Launcher')} hint={t('Скины, плащи и эмоции в игре')} keys="мод эмоции плащи">
           <Toggle
-            id="setMillidaMod"
-            label={t('Мод Millida')}
+            id="setOfficial MC LauncherMod"
+            label={t('Мод Official MC Launcher')}
             on={modOn}
             onChange={() => {
               const next = !modOn
               setModOn(next)
-              setMillidaModEnabled(next)
+              setOfficial MC LauncherModEnabled(next)
                 .then(() => showToast(next ? t('Мод вернётся при следующем запуске сборки') : t('Мод убран из сборок')))
                 .catch((err) => {
                   console.error('[settings] millida mod', err)
@@ -1150,8 +1150,8 @@ export function Settings({ on }: { on: boolean }) {
       ) : null}
 
       <Group title={t('Видно в профиле на millida.net')}>
-        {!hasMillida ? (
-          <Row title={t('Нужен аккаунт Millida')} keys="приватность профиль видно">
+        {!hasOfficial MC Launcher ? (
+          <Row title={t('Нужен аккаунт Official MC Launcher')} keys="приватность профиль видно">
             <button className="btn sm primary" onClick={() => showLogin()}>
               <Icon id="i-login" /> {t('Войти')}
             </button>
@@ -1182,7 +1182,7 @@ export function Settings({ on }: { on: boolean }) {
         ) : null}
       </Group>
 
-      {hasMillida ? (
+      {hasOfficial MC Launcher ? (
         <Group title={t('Эмоции вдвоём')}>
           <Row title={t('Кто может звать')} keys="эмоции вдвоём приглашение приватность друзья">
             {!privacy.loaded && privacy.loading ? (
@@ -1228,9 +1228,9 @@ export function Settings({ on }: { on: boolean }) {
     <>
       <Block keys="версия обновление обновить проверить">
         <div className="s2-hero">
-          <img src="/millida-logo.svg" alt="" width={48} height={48} />
+          <img src="/official-mc-logo.svg" alt="" width={48} height={48} />
           <span className="s2-hero-txt">
-            <b>Millida Launcher</b>
+            <b>Official MC Launcher</b>
             <small>
               {upd
                 ? updStaged
@@ -1288,7 +1288,7 @@ export function Settings({ on }: { on: boolean }) {
             {t('Открыть')}
           </button>
         </Row>
-        <Row title={t('Тестовые версии')} hint={t('Лаунчер и мод Millida раньше всех, бывают поломки')} keys="бета тестирование обновления раньше мод">
+        <Row title={t('Тестовые версии')} hint={t('Лаунчер и мод Official MC Launcher раньше всех, бывают поломки')} keys="бета тестирование обновления раньше мод">
           <Toggle
             label={t('Тестовые версии')}
             on={beta}
